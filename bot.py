@@ -214,18 +214,21 @@ async def nexttest(interaction: discord.Interaction):
         )
         return
 
+    # Defer interaction to avoid "did not respond"
+    await interaction.response.defer()
+
     remaining = check_cooldown(interaction.guild.id)
 
     if remaining > 0:
         mins, secs = divmod(remaining, 60)
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"⏳ Command on cooldown. Try again in {mins}m {secs}s.",
             ephemeral=True
         )
         return
 
     embed = build_embed(get_next_test())
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 
 # ---------------- ANNOUNCEMENT COMMANDS ----------------
