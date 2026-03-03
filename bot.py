@@ -123,6 +123,31 @@ async def background_scraper():
         sleep_time = random.randint(1800, 3600)
         await asyncio.sleep(sleep_time)
 
+# ---------------- CHAT TRIGGER ----------------
+@client.event
+async def on_message(message):
+    if message.author.bot or not message.guild:
+        return
+
+    if re.search(r"\bwhen\b.*\b(test|war)\b", message.content.lower()):
+        embed = build_embed(cached_result)
+        await message.channel.send(embed=embed)
+
+
+# ---------------- SLASH COMMAND ----------------
+
+@tree.command(name="nexttest", description="Shows the next test date")
+async def nexttest(interaction: discord.Interaction):
+
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    embed = build_embed(cached_result)
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="setannouncementchannel", description="Set the channel for automatic test announcements")
 @app_commands.describe(channel="Channel where announcements will be posted")
