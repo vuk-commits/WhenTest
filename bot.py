@@ -23,6 +23,7 @@ CHANNELS_FILE = "channels.json"
 cached_result = {"status": "error", "data": "Not scraped yet"}
 last_scraped_time = None
 last_saved_date = None
+last_announced_live = False
 announcement_channels = {}
 
 
@@ -79,8 +80,36 @@ async def scrape_next_test():
     return {"status": "ok", "data": next_time}
 
 
+# ---------------- CHECK IF TEST IS LIVE ----------------
+def is_test_live(scraped):
+    if scraped["status"] != "ok":
+        return False
+    
+    dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
+    now = datetime.now(timezone.utc)
+    return now >= dt
+
+
+# ---------------- LIVE EMBED ----------------
+def build_live_embed():
+    embed = discord.Embed(title="🔥 THE TEST IS LIVE! 🔥")
+    embed.description = "❗ **The test is currently active!** ❗"
+    embed.color = discord.Color.red()
+    
+    if last_scraped_time:
+        formatted = last_scraped_time.strftime("%Y-%m-%d %H:%M UTC")
+        embed.set_footer(text=f"Last updated: {formatted}")
+    
+    embed.timestamp = datetime.now(timezone.utc)
+    return embed
+
+
 # ---------------- NORMAL EMBED (USER COMMANDS) ----------------
 def build_embed(scraped):
+    # Check if test is live first
+    if is_test_live(scraped):
+        return build_live_embed()
+    
     embed = discord.Embed(title="Anvil Empires Test")
 
     if scraped["status"] == "ok":
@@ -132,7 +161,7 @@ def build_announcement_embed(scraped):
 
 # ---------------- AUTO SCRAPER LOOP ----------------
 async def background_scraper():
-    global cached_result, last_scraped_time, last_saved_date
+    global cached_result, last_scraped_time, last_saved_date, last_announced_live
 
     await client.wait_until_ready()
 
@@ -145,17 +174,30 @@ async def background_scraper():
         last_scraped_time = datetime.now(timezone.utc)
 
         if result["status"] == "ok":
+            # Check if test is now live
+            if is_test_live(result):
+                if not last_announced_live:
+                    print("Test is LIVE! Sending live announcement...")
+                    last_announced_live = True
+                    embed = build_live_embed()
 
-            if result["data"] != last_saved_date:
-                print("New date detected. Sending announcement...")
-                last_saved_date = result["data"]
+                    for guild_id, channel_id in announcement_channels.items():
+                        channel = client.get_channel(int(channel_id))
+                        if channel:
+                            await channel.send(content="📢 **THE TEST IS LIVE!**", embed=embed)
+            else:
+                # Test is not yet live, check for new date
+                if result["data"] != last_saved_date:
+                    print("New date detected. Sending announcement...")
+                    last_saved_date = result["data"]
+                    last_announced_live = False
 
-                embed = build_announcement_embed(result)
+                    embed = build_announcement_embed(result)
 
-                for guild_id, channel_id in announcement_channels.items():
-                    channel = client.get_channel(int(channel_id))
-                    if channel:
-                        await channel.send(embed=embed)
+                    for guild_id, channel_id in announcement_channels.items():
+                        channel = client.get_channel(int(channel_id))
+                        if channel:
+                            await channel.send(embed=embed)
 
         print("Scrape finished.")
 
