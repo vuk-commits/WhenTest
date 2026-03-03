@@ -115,7 +115,7 @@ def build_embed(scraped):
     if is_test_live(scraped):
         return build_live_embed()
     
-    embed = discord.Embed(title="Anvil Empires Test")
+    embed = discord.Embed(title="When is the next Anvil Empires Test?")
 
     if scraped["status"] == "ok":
         dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
@@ -142,7 +142,7 @@ def build_embed(scraped):
 
 # ---------------- ANNOUNCEMENT EMBED ----------------
 def build_announcement_embed(scraped):
-    embed = discord.Embed(title="❗Anvil Empires Test❗")
+    embed = discord.Embed(title="❗Anvil Empires Test has a new date!❗")
 
     dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
     unix = int(dt.timestamp())
