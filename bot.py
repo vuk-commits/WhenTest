@@ -175,7 +175,7 @@ async def on_message(message):
             mins, secs = divmod(remaining, 60)
             await message.channel.send(
                 f"⏳ Command on cooldown. Try again in {mins}m {secs}s.",
-                delete_after=5  # automatically delete after 5 seconds
+                delete_after=3  # automatically delete after 5 seconds
             )
             return
 
