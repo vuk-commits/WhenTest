@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import tasks
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import re
 import json
@@ -70,15 +70,28 @@ def scrape_next_test():
     if not countdown:
         return {"status": "error", "data": "Countdown not found"}
 
-    text_over = countdown.get("data-jst-text-over", "")
     next_time = countdown.get("data-jst-time")
-
-    if "LIVE" in text_over.upper():
-        return {"status": "live", "data": None}
 
     if not next_time:
         return {"status": "error", "data": "Time not found"}
 
+    # Parse datetime safely
+    try:
+        dt = datetime.fromisoformat(next_time.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            dt = datetime.strptime(next_time, "%Y-%m-%d %H:%M")
+            dt = dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return {"status": "error", "data": f"Unknown date format: {next_time}"}
+
+    now = datetime.now(timezone.utc)
+
+    # Consider test LIVE if within 6 hours of start
+    if dt <= now <= (dt.replace(hour=dt.hour + 6)):
+        return {"status": "live", "data": None}
+
+    # If event time already passed long ago, just treat as scheduled until updated
     return {"status": "scheduled", "data": next_time}
 
 
@@ -95,6 +108,7 @@ def build_embed(scraped):
             dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
         except ValueError:
             dt = datetime.strptime(scraped["data"], "%Y-%m-%d %H:%M")
+            dt = dt.replace(tzinfo=timezone.utc)
 
         unix = int(dt.timestamp())
 
