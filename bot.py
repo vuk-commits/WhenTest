@@ -147,7 +147,7 @@ async def background_scraper():
         if result["status"] == "ok":
 
             if result["data"] != last_saved_date:
-                print("New date detected. Sending announcement...")
+                print("New date " + data + "detected. Sending announcement...")
                 last_saved_date = result["data"]
 
                 embed = build_announcement_embed(result)
