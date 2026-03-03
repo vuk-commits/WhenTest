@@ -95,13 +95,29 @@ def build_embed(scraped):
                 embed.color = discord.Color.red()
                 return embed
 
+        now = datetime.now(timezone.utc)
+        diff = dt - now
+
+        if diff.total_seconds() < 0:
+            countdown_text = "Already passed."
+        else:
+            total_seconds = int(diff.total_seconds())
+            days = total_seconds // 86400
+            hours = (total_seconds % 86400) // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+
+            countdown_text = f"{days}d {hours}h {minutes}m {seconds}s"
+
         unix = int(dt.timestamp())
 
         embed.description = (
             f"🛡️ **Next Test Date:**\n"
-            f"<t:{unix}:F>\n"
-            f"⏳ <t:{unix}:R>"
+            f"<t:{unix}:F>\n\n"
+            f"⏳ **Time Remaining:**\n"
+            f"{countdown_text}"
         )
+
         embed.color = discord.Color.green()
 
     else:
