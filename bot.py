@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import tasks
-import cloudscraper
+import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 import time
@@ -27,8 +27,6 @@ cached_result = None
 cached_timestamp = 0
 last_announced_time = None
 
-scraper = cloudscraper.create_scraper()
-
 
 # ---------------- FILE HELPERS ----------------
 def load_json(filename, default):
@@ -51,8 +49,18 @@ cooldowns = load_json(COOLDOWN_FILE, {})
 def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://www.google.com/",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
     try:
-        response = scraper.get(url, timeout=15)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
     except Exception as e:
         return {"status": "error", "data": f"Request failed: {e}"}
@@ -66,7 +74,7 @@ def scrape_next_test():
     next_time = countdown.get("data-jst-time")
 
     if not next_time:
-        return {"status": "error", "data": "Time not found"}
+        return {"status": "error", "data": "data-jst-time not found"}
 
     return {"status": "ok", "data": next_time}
 
@@ -84,7 +92,7 @@ def build_embed(scraped):
                 dt = dt.replace(tzinfo=timezone.utc)
             except ValueError:
                 embed.description = f"⚠️ Unknown date format:\n{scraped['data']}"
-                embed.color = discord.Color.yellow()
+                embed.color = discord.Color.red()
                 return embed
 
         unix = int(dt.timestamp())
@@ -128,8 +136,7 @@ def check_cooldown(guild_id):
     last_time = cooldowns.get(guild_id, 0)
 
     if now - last_time < GLOBAL_COOLDOWN:
-        remaining = int(GLOBAL_COOLDOWN - (now - last_time))
-        return remaining
+        return int(GLOBAL_COOLDOWN - (now - last_time))
 
     cooldowns[guild_id] = now
     save_json(COOLDOWN_FILE, cooldowns)
