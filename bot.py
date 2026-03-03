@@ -1,12 +1,13 @@
 import discord
 from discord import app_commands
-import requests
+import aiohttp
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 import asyncio
 import random
 import re
 import os
+import json
 
 TOKEN = os.getenv("TOKEN")
 
@@ -16,16 +17,36 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
+CHANNELS_FILE = "channels.json"
+
 # ---------------- GLOBAL CACHE ----------------
 cached_result = {"status": "error", "data": "Not scraped yet"}
 last_scraped_time = None
+last_announced_date = None
+announcement_channels = {}
+
+
+# ---------------- FILE HELPERS ----------------
+def load_json(filename, default):
+    if not os.path.exists(filename):
+        return default
+    with open(filename, "r") as f:
+        return json.load(f)
+
+
+def save_json(filename, data):
+    with open(filename, "w") as f:
+        json.dump(data, f)
+
+
+announcement_channels = load_json(CHANNELS_FILE, {})
 
 
 # ---------------- SCRAPER ----------------
-def scrape_next_test():
+async def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
 
-    # ✅ YOUR ORIGINAL HEADERS (ANTI-403 SAFE)
+    # ✅ YOUR FULL HEADERS (ANTI-403 SAFE)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -37,12 +58,17 @@ def scrape_next_test():
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=15) as response:
+                if response.status != 200:
+                    return {"status": "error", "data": f"HTTP {response.status}"}
+
+                text = await response.text()
+
     except Exception as e:
         return {"status": "error", "data": f"Request failed: {e}"}
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(text, "html.parser")
     countdown = soup.find("div", attrs={"data-jst-time": True})
 
     if not countdown:
@@ -81,35 +107,48 @@ def build_embed(scraped):
         embed.color = discord.Color.red()
 
     if last_scraped_time:
-        embed.set_footer(text=f"Last updated: {last_scraped_time} UTC")
+        unix = int(last_scraped_time.timestamp())
+        embed.set_footer(text=f"Last updated: <t:{unix}:R>")
 
-    embed.timestamp = datetime.utcnow()
+    embed.timestamp = datetime.now(timezone.utc)
     return embed
 
 
-# ---------------- RANDOM AUTO SCRAPER ----------------
+# ---------------- AUTO SCRAPER LOOP ----------------
 async def background_scraper():
-    global cached_result, last_scraped_time
+    global cached_result, last_scraped_time, last_announced_date
 
     await client.wait_until_ready()
 
-    # ✅ First scrape immediately on startup
-    print("Initial scrape...")
-    result = scrape_next_test()
-    cached_result = result
-    last_scraped_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-
     while not client.is_closed():
-        # Sleep random 30–60 minutes
+
+        print("Scraping wiki...")
+
+        result = await scrape_next_test()
+        cached_result = result
+        last_scraped_time = datetime.now(timezone.utc)
+
+        # Auto announce if date changed
+        if result["status"] == "ok":
+            if result["data"] != last_announced_date:
+                last_announced_date = result["data"]
+
+                embed = build_embed(result)
+
+                for channel_id in announcement_channels.values():
+                    channel = client.get_channel(int(channel_id))
+                    if channel:
+                        await channel.send(
+                            content="📢 **Test Date Updated!**",
+                            embed=embed
+                        )
+
+        print("Scrape finished.")
+
+        # Random sleep between 30–60 minutes
         sleep_time = random.randint(1800, 3600)
         print(f"Next scrape in {sleep_time // 60} minutes")
         await asyncio.sleep(sleep_time)
-
-        print("Scraping wiki...")
-        result = scrape_next_test()
-        cached_result = result
-        last_scraped_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-        print("Scrape finished.")
 
 
 # ---------------- CHAT TRIGGER ----------------
@@ -136,6 +175,53 @@ async def nexttest(interaction: discord.Interaction):
 
     embed = build_embed(cached_result)
     await interaction.response.send_message(embed=embed)
+
+
+# ---------------- ANNOUNCEMENT COMMANDS ----------------
+@tree.command(name="setannouncement", description="Set announcement channel")
+@app_commands.describe(channel="Channel to post updates in")
+async def setannouncement(interaction: discord.Interaction, channel: discord.TextChannel):
+
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "❌ Administrator permission required.",
+            ephemeral=True
+        )
+        return
+
+    announcement_channels[str(interaction.guild.id)] = channel.id
+    save_json(CHANNELS_FILE, announcement_channels)
+
+    await interaction.response.send_message(
+        f"✅ Announcement channel set to {channel.mention}",
+        ephemeral=True
+    )
+
+
+@tree.command(name="removeannouncement", description="Remove announcement channel")
+async def removeannouncement(interaction: discord.Interaction):
+
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "❌ Administrator permission required.",
+            ephemeral=True
+        )
+        return
+
+    guild_id = str(interaction.guild.id)
+
+    if guild_id in announcement_channels:
+        del announcement_channels[guild_id]
+        save_json(CHANNELS_FILE, announcement_channels)
+        await interaction.response.send_message(
+            "✅ Announcement channel removed.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            "⚠️ No announcement channel set.",
+            ephemeral=True
+        )
 
 
 # ---------------- READY ----------------
