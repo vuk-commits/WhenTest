@@ -168,13 +168,14 @@ async def on_message(message):
     if message.author.bot or not message.guild:
         return
 
-    if re.search(r"\bnext\b.*\b(test|war)\b", message.content.lower()):
+    if re.search(r"\bwhen\b.*\b(test|war)\b", message.content.lower()):
         remaining = check_cooldown(message.guild.id)
 
         if remaining > 0:
             mins, secs = divmod(remaining, 60)
             await message.channel.send(
-                f"⏳ Command on cooldown. Try again in {mins}m {secs}s."
+                f"⏳ Command on cooldown. Try again in {mins}m {secs}s.",
+                delete_after=5  # automatically delete after 5 seconds
             )
             return
 
