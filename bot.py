@@ -86,6 +86,11 @@ def is_test_live(scraped):
         return False
     
     dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
+    
+    # Ensure dt is timezone-aware
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    
     now = datetime.now(timezone.utc)
     return now >= dt
 
