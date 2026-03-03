@@ -214,7 +214,13 @@ async def setannouncementchannel(interaction: discord.Interaction, channel: disc
 # ---------------- READY ----------------
 @client.event
 async def on_ready():
-    await tree.sync()
+    for guild in client.guilds:
+        try:
+            await tree.sync(guild=guild)
+            print(f"Synced commands to {guild.name}")
+        except Exception as e:
+            print(f"Failed syncing {guild.name}: {e}")
+
     client.loop.create_task(background_scraper())
     print(f"Logged in as {client.user}")
 
