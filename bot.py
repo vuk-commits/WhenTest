@@ -12,7 +12,7 @@ import os
 TOKEN = os.getenv("TOKEN")
 
 GLOBAL_COOLDOWN = 60
-CACHE_DURATION = 60
+CACHE_DURATION = 600
 
 CHANNELS_FILE = "channels.json"
 COOLDOWN_FILE = "cooldown.json"
