@@ -19,12 +19,14 @@ tree = app_commands.CommandTree(client)
 
 CHANNELS_FILE = "channels.json"
 
+# ---------------- GLOBAL STATE ----------------
 cached_result = {"status": "error", "data": "Not scraped yet"}
 last_scraped_time = None
 last_saved_date = None
 announcement_channels = {}
 
 
+# ---------------- FILE HELPERS ----------------
 def load_json(filename, default):
     if not os.path.exists(filename):
         return default
@@ -40,6 +42,7 @@ def save_json(filename, data):
 announcement_channels = load_json(CHANNELS_FILE, {})
 
 
+# ---------------- SCRAPER ----------------
 async def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
 
@@ -76,6 +79,34 @@ async def scrape_next_test():
     return {"status": "ok", "data": next_time}
 
 
+# ---------------- NORMAL EMBED (USER COMMANDS) ----------------
+def build_embed(scraped):
+    embed = discord.Embed(title="Anvil Empires Test")
+
+    if scraped["status"] == "ok":
+        dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
+        unix = int(dt.timestamp())
+
+        embed.description = (
+            f"🛡️ **Next Test Date:**\n"
+            f"<t:{unix}:F>\n"
+            f"⏳ <t:{unix}:R>"
+        )
+        embed.color = discord.Color.green()
+    else:
+        embed.description = f"⚠️ {scraped['data']}"
+        embed.color = discord.Color.red()
+
+    if last_scraped_time:
+        formatted = last_scraped_time.strftime("%Y-%m-%d %H:%M UTC")
+        embed.set_footer(text=f"Last updated: {formatted}")
+
+    embed.timestamp = datetime.now(timezone.utc)
+
+    return embed
+
+
+# ---------------- ANNOUNCEMENT EMBED ----------------
 def build_announcement_embed(scraped):
     embed = discord.Embed(title="❗Anvil Empires Test❗")
 
@@ -99,6 +130,7 @@ def build_announcement_embed(scraped):
     return embed
 
 
+# ---------------- AUTO SCRAPER LOOP ----------------
 async def background_scraper():
     global cached_result, last_scraped_time, last_saved_date
 
@@ -106,13 +138,18 @@ async def background_scraper():
 
     while not client.is_closed():
 
+        print("Scraping wiki...")
+
         result = await scrape_next_test()
         cached_result = result
         last_scraped_time = datetime.now(timezone.utc)
 
         if result["status"] == "ok":
+
             if result["data"] != last_saved_date:
+                print("New date detected. Sending announcement...")
                 last_saved_date = result["data"]
+
                 embed = build_announcement_embed(result)
 
                 for guild_id, channel_id in announcement_channels.items():
@@ -120,8 +157,12 @@ async def background_scraper():
                     if channel:
                         await channel.send(embed=embed)
 
+        print("Scrape finished.")
+
         sleep_time = random.randint(1800, 3600)
+        print(f"Next scrape in {sleep_time // 60} minutes")
         await asyncio.sleep(sleep_time)
+
 
 # ---------------- CHAT TRIGGER ----------------
 @client.event
@@ -135,7 +176,6 @@ async def on_message(message):
 
 
 # ---------------- SLASH COMMAND ----------------
-
 @tree.command(name="nexttest", description="Shows the next test date")
 async def nexttest(interaction: discord.Interaction):
 
@@ -149,35 +189,11 @@ async def nexttest(interaction: discord.Interaction):
     embed = build_embed(cached_result)
     await interaction.response.send_message(embed=embed)
 
-@tree.command(name="setannouncementchannel", description="Set the channel for automatic test announcements")
-@app_commands.describe(channel="Channel where announcements will be posted")
-async def setannouncementchannel(interaction: discord.Interaction, channel: discord.TextChannel):
 
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permission required.",
-            ephemeral=True
-        )
-        return
-
-    announcement_channels[str(interaction.guild.id)] = channel.id
-    save_json(CHANNELS_FILE, announcement_channels)
-
-    await interaction.response.send_message(
-        f"✅ Announcement channel set to {channel.mention}",
-        ephemeral=True
-    )
-
-
+# ---------------- READY ----------------
 @client.event
 async def on_ready():
-    for guild in client.guilds:
-        try:
-            await tree.sync(guild=guild)
-            print(f"Synced commands to {guild.name}")
-        except Exception as e:
-            print(f"Failed syncing {guild.name}: {e}")
-
+    await tree.sync()
     client.loop.create_task(background_scraper())
     print(f"Logged in as {client.user}")
 
