@@ -9,9 +9,9 @@ import re
 import json
 import os
 
-TOKEN = os.getenv("TOKEN")  # safer than hardcoding
+TOKEN = os.getenv("TOKEN")
 
-GLOBAL_COOLDOWN = 60  # 10 minutes
+GLOBAL_COOLDOWN = 60
 CACHE_DURATION = 60
 
 CHANNELS_FILE = "channels.json"
@@ -48,8 +48,21 @@ cooldowns = load_json(COOLDOWN_FILE, {})
 # ---------------- SCRAPER ----------------
 def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    response.raise_for_status()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://www.google.com/",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+    except Exception as e:
+        return {"status": "error", "data": f"Request failed: {e}"}
 
     soup = BeautifulSoup(response.text, "html.parser")
     countdown = soup.find("div", attrs={"data-jst-time": True})
@@ -78,7 +91,11 @@ def build_embed(scraped):
         embed.color = discord.Color.red()
 
     elif scraped["status"] == "scheduled":
-        dt = datetime.strptime(scraped["data"], "%Y-%m-%d %H:%M")
+        try:
+            dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
+        except ValueError:
+            dt = datetime.strptime(scraped["data"], "%Y-%m-%d %H:%M")
+
         unix = int(dt.timestamp())
 
         embed.description = (
@@ -175,7 +192,7 @@ async def on_message(message):
             mins, secs = divmod(remaining, 60)
             await message.channel.send(
                 f"⏳ Command on cooldown. Try again in {mins}m {secs}s.",
-                delete_after=3  # automatically delete after 5 seconds
+                delete_after=3
             )
             return
 
@@ -186,6 +203,13 @@ async def on_message(message):
 # ---------------- SLASH COMMANDS ----------------
 @tree.command(name="nexttest", description="Shows the next test date")
 async def nexttest(interaction: discord.Interaction):
+
+    if not interaction.guild:
+        await interaction.response.send_message(
+            "❌ This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
 
     remaining = check_cooldown(interaction.guild.id)
 
