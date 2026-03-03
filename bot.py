@@ -1,21 +1,14 @@
 import discord
 from discord import app_commands
-from discord.ext import tasks
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
-import time
+import asyncio
+import random
 import re
-import json
 import os
 
 TOKEN = os.getenv("TOKEN")
-
-GLOBAL_COOLDOWN = 60
-CACHE_DURATION = 600
-
-CHANNELS_FILE = "channels.json"
-COOLDOWN_FILE = "cooldown.json"
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -23,32 +16,16 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-cached_result = None
-cached_timestamp = 0
-last_announced_time = None
-
-
-# ---------------- FILE HELPERS ----------------
-def load_json(filename, default):
-    if not os.path.exists(filename):
-        return default
-    with open(filename, "r") as f:
-        return json.load(f)
-
-
-def save_json(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f)
-
-
-announcement_channels = load_json(CHANNELS_FILE, {})
-cooldowns = load_json(COOLDOWN_FILE, {})
+# ---------------- GLOBAL CACHE ----------------
+cached_result = {"status": "error", "data": "Not scraped yet"}
+last_scraped_time = None
 
 
 # ---------------- SCRAPER ----------------
 def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
 
+    # ✅ YOUR ORIGINAL HEADERS (ANTI-403 SAFE)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -87,13 +64,9 @@ def build_embed(scraped):
         try:
             dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
         except ValueError:
-            try:
-                dt = datetime.strptime(scraped["data"], "%Y-%m-%d %H:%M")
-                dt = dt.replace(tzinfo=timezone.utc)
-            except ValueError:
-                embed.description = f"⚠️ Unknown date format:\n{scraped['data']}"
-                embed.color = discord.Color.red()
-                return embed
+            embed.description = f"⚠️ Unknown date format:\n{scraped['data']}"
+            embed.color = discord.Color.red()
+            return embed
 
         unix = int(dt.timestamp())
 
@@ -103,67 +76,40 @@ def build_embed(scraped):
             f"⏳ <t:{unix}:R>"
         )
         embed.color = discord.Color.green()
-
     else:
         embed.description = f"⚠️ {scraped['data']}"
         embed.color = discord.Color.red()
 
-    embed.timestamp = datetime.utcnow()
-    embed.set_footer(text="Data from anvilempires.wiki.gg")
+    if last_scraped_time:
+        embed.set_footer(text=f"Last updated: {last_scraped_time} UTC")
 
+    embed.timestamp = datetime.utcnow()
     return embed
 
 
-# ---------------- CACHE ----------------
-def get_next_test():
-    global cached_result, cached_timestamp
+# ---------------- RANDOM AUTO SCRAPER ----------------
+async def background_scraper():
+    global cached_result, last_scraped_time
 
-    now = time.time()
-    if cached_result and (now - cached_timestamp < CACHE_DURATION):
-        return cached_result
+    await client.wait_until_ready()
 
-    scraped = scrape_next_test()
-    cached_result = scraped
-    cached_timestamp = now
-    return scraped
+    # ✅ First scrape immediately on startup
+    print("Initial scrape...")
+    result = scrape_next_test()
+    cached_result = result
+    last_scraped_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
 
+    while not client.is_closed():
+        # Sleep random 30–60 minutes
+        sleep_time = random.randint(1800, 3600)
+        print(f"Next scrape in {sleep_time // 60} minutes")
+        await asyncio.sleep(sleep_time)
 
-# ---------------- COOLDOWN ----------------
-def check_cooldown(guild_id):
-    now = time.time()
-    guild_id = str(guild_id)
-
-    last_time = cooldowns.get(guild_id, 0)
-
-    if now - last_time < GLOBAL_COOLDOWN:
-        return int(GLOBAL_COOLDOWN - (now - last_time))
-
-    cooldowns[guild_id] = now
-    save_json(COOLDOWN_FILE, cooldowns)
-    return 0
-
-
-# ---------------- AUTO ANNOUNCER ----------------
-@tasks.loop(minutes=10)
-async def auto_check():
-    global last_announced_time
-
-    scraped = scrape_next_test()
-
-    if scraped["status"] != "ok":
-        return
-
-    if scraped["data"] != last_announced_time:
-        last_announced_time = scraped["data"]
-        embed = build_embed(scraped)
-
-        for channel_id in announcement_channels.values():
-            channel = client.get_channel(int(channel_id))
-            if channel:
-                await channel.send(
-                    content="📢 **Test Date Updated!**",
-                    embed=embed
-                )
+        print("Scraping wiki...")
+        result = scrape_next_test()
+        cached_result = result
+        last_scraped_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        print("Scrape finished.")
 
 
 # ---------------- CHAT TRIGGER ----------------
@@ -173,17 +119,7 @@ async def on_message(message):
         return
 
     if re.search(r"\bwhen\b.*\b(test|war)\b", message.content.lower()):
-        remaining = check_cooldown(message.guild.id)
-
-        if remaining > 0:
-            mins, secs = divmod(remaining, 60)
-            await message.channel.send(
-                f"⏳ Command on cooldown. Try again in {mins}m {secs}s.",
-                delete_after=3
-            )
-            return
-
-        embed = build_embed(get_next_test())
+        embed = build_embed(cached_result)
         await message.channel.send(embed=embed)
 
 
@@ -198,72 +134,15 @@ async def nexttest(interaction: discord.Interaction):
         )
         return
 
-    remaining = check_cooldown(interaction.guild.id)
-
-    if remaining > 0:
-        mins, secs = divmod(remaining, 60)
-        await interaction.response.send_message(
-            f"⏳ Command on cooldown. Try again in {mins}m {secs}s.",
-            ephemeral=True
-        )
-        return
-
-    embed = build_embed(get_next_test())
+    embed = build_embed(cached_result)
     await interaction.response.send_message(embed=embed)
-
-
-# ---------------- ANNOUNCEMENT COMMANDS ----------------
-@tree.command(name="setannouncement", description="Set announcement channel")
-@app_commands.describe(channel="Channel to post updates in")
-async def setannouncement(interaction: discord.Interaction, channel: discord.TextChannel):
-
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permission required.",
-            ephemeral=True
-        )
-        return
-
-    announcement_channels[str(interaction.guild.id)] = channel.id
-    save_json(CHANNELS_FILE, announcement_channels)
-
-    await interaction.response.send_message(
-        f"✅ Announcement channel set to {channel.mention}",
-        ephemeral=True
-    )
-
-
-@tree.command(name="removeannouncement", description="Remove announcement channel")
-async def removeannouncement(interaction: discord.Interaction):
-
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permission required.",
-            ephemeral=True
-        )
-        return
-
-    guild_id = str(interaction.guild.id)
-
-    if guild_id in announcement_channels:
-        del announcement_channels[guild_id]
-        save_json(CHANNELS_FILE, announcement_channels)
-        await interaction.response.send_message(
-            "✅ Announcement channel removed.",
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            "⚠️ No announcement channel set.",
-            ephemeral=True
-        )
 
 
 # ---------------- READY ----------------
 @client.event
 async def on_ready():
     await tree.sync()
-    auto_check.start()
+    client.loop.create_task(background_scraper())
     print(f"Logged in as {client.user}")
 
 
