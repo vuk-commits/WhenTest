@@ -11,8 +11,8 @@ import os
 
 TOKEN = os.getenv("TOKEN")  # safer than hardcoding
 
-GLOBAL_COOLDOWN = 600  # 10 minutes
-CACHE_DURATION = 600
+GLOBAL_COOLDOWN = 60  # 10 minutes
+CACHE_DURATION = 60
 
 CHANNELS_FILE = "channels.json"
 COOLDOWN_FILE = "cooldown.json"
