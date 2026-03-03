@@ -48,15 +48,7 @@ cooldowns = load_json(COOLDOWN_FILE, {})
 # ---------------- SCRAPER ----------------
 def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Referer": "https://www.google.com/",
-        "DNT": "1",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
@@ -75,45 +67,29 @@ def scrape_next_test():
     if not next_time:
         return {"status": "error", "data": "Time not found"}
 
-    # Parse datetime safely
-    try:
-        dt = datetime.fromisoformat(next_time.replace("Z", "+00:00"))
-    except ValueError:
-        try:
-            dt = datetime.strptime(next_time, "%Y-%m-%d %H:%M")
-            dt = dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            return {"status": "error", "data": f"Unknown date format: {next_time}"}
-
-    now = datetime.now(timezone.utc)
-
-    # Consider test LIVE if within 6 hours of start
-    if dt <= now <= (dt.replace(hour=dt.hour + 6)):
-        return {"status": "live", "data": None}
-
-    # If event time already passed long ago, just treat as scheduled until updated
-    return {"status": "scheduled", "data": next_time}
+    return {"status": "ok", "data": next_time}
 
 
 # ---------------- EMBED ----------------
 def build_embed(scraped):
-    embed = discord.Embed(title="Anvil Empires Test Status")
+    embed = discord.Embed(title="Next Anvil Empires Test")
 
-    if scraped["status"] == "live":
-        embed.description = "🔥 **TEST IS CURRENTLY LIVE!**"
-        embed.color = discord.Color.red()
-
-    elif scraped["status"] == "scheduled":
+    if scraped["status"] == "ok":
         try:
             dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
         except ValueError:
-            dt = datetime.strptime(scraped["data"], "%Y-%m-%d %H:%M")
-            dt = dt.replace(tzinfo=timezone.utc)
+            try:
+                dt = datetime.strptime(scraped["data"], "%Y-%m-%d %H:%M")
+                dt = dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                embed.description = f"⚠️ Unknown date format:\n{scraped['data']}"
+                embed.color = discord.Color.yellow()
+                return embed
 
         unix = int(dt.timestamp())
 
         embed.description = (
-            f"🛡️ **Next Test Starts:**\n"
+            f"🛡️ **Next Test Date:**\n"
             f"<t:{unix}:F>\n"
             f"⏳ <t:{unix}:R>"
         )
@@ -121,7 +97,7 @@ def build_embed(scraped):
 
     else:
         embed.description = f"⚠️ {scraped['data']}"
-        embed.color = discord.Color.yellow()
+        embed.color = discord.Color.red()
 
     embed.timestamp = datetime.utcnow()
     embed.set_footer(text="Data from anvilempires.wiki.gg")
@@ -143,7 +119,7 @@ def get_next_test():
     return scraped
 
 
-# ---------------- PER-SERVER COOLDOWN ----------------
+# ---------------- COOLDOWN ----------------
 def check_cooldown(guild_id):
     now = time.time()
     guild_id = str(guild_id)
@@ -166,31 +142,20 @@ async def auto_check():
 
     scraped = scrape_next_test()
 
-    if scraped["status"] == "scheduled":
-        if scraped["data"] != last_announced_time:
-            last_announced_time = scraped["data"]
-            embed = build_embed(scraped)
+    if scraped["status"] != "ok":
+        return
 
-            for channel_id in announcement_channels.values():
-                channel = client.get_channel(int(channel_id))
-                if channel:
-                    await channel.send(
-                        content="📢 **Test Date Updated!**",
-                        embed=embed
-                    )
+    if scraped["data"] != last_announced_time:
+        last_announced_time = scraped["data"]
+        embed = build_embed(scraped)
 
-    elif scraped["status"] == "live":
-        if last_announced_time != "live":
-            last_announced_time = "live"
-            embed = build_embed(scraped)
-
-            for channel_id in announcement_channels.values():
-                channel = client.get_channel(int(channel_id))
-                if channel:
-                    await channel.send(
-                        content="📢 **The test is now LIVE!**",
-                        embed=embed
-                    )
+        for channel_id in announcement_channels.values():
+            channel = client.get_channel(int(channel_id))
+            if channel:
+                await channel.send(
+                    content="📢 **Test Date Updated!**",
+                    embed=embed
+                )
 
 
 # ---------------- CHAT TRIGGER ----------------
@@ -214,7 +179,7 @@ async def on_message(message):
         await message.channel.send(embed=embed)
 
 
-# ---------------- SLASH COMMANDS ----------------
+# ---------------- SLASH COMMAND ----------------
 @tree.command(name="nexttest", description="Shows the next test date")
 async def nexttest(interaction: discord.Interaction):
 
@@ -239,6 +204,7 @@ async def nexttest(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+# ---------------- ANNOUNCEMENT COMMANDS ----------------
 @tree.command(name="setannouncement", description="Set announcement channel")
 @app_commands.describe(channel="Channel to post updates in")
 async def setannouncement(interaction: discord.Interaction, channel: discord.TextChannel):
