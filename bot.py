@@ -95,29 +95,13 @@ def build_embed(scraped):
                 embed.color = discord.Color.red()
                 return embed
 
-        now = datetime.now(timezone.utc)
-        diff = dt - now
-
-        if diff.total_seconds() < 0:
-            countdown_text = "Already passed."
-        else:
-            total_seconds = int(diff.total_seconds())
-            days = total_seconds // 86400
-            hours = (total_seconds % 86400) // 3600
-            minutes = (total_seconds % 3600) // 60
-            seconds = total_seconds % 60
-
-            countdown_text = f"{days}d {hours}h {minutes}m {seconds}s"
-
         unix = int(dt.timestamp())
 
         embed.description = (
             f"🛡️ **Next Test Date:**\n"
-            f"<t:{unix}:F>\n\n"
-            f"⏳ **Time Remaining:**\n"
-            f"{countdown_text}"
+            f"<t:{unix}:F>\n"
+            f"⏳ <t:{unix}:R>"
         )
-
         embed.color = discord.Color.green()
 
     else:
@@ -214,21 +198,18 @@ async def nexttest(interaction: discord.Interaction):
         )
         return
 
-    # Defer interaction to avoid "did not respond"
-    await interaction.response.defer()
-
     remaining = check_cooldown(interaction.guild.id)
 
     if remaining > 0:
         mins, secs = divmod(remaining, 60)
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"⏳ Command on cooldown. Try again in {mins}m {secs}s.",
             ephemeral=True
         )
         return
 
     embed = build_embed(get_next_test())
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 
 # ---------------- ANNOUNCEMENT COMMANDS ----------------
