@@ -46,7 +46,6 @@ announcement_channels = load_json(CHANNELS_FILE, {})
 async def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
 
-    # ✅ YOUR FULL HEADERS (ANTI-403 SAFE)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -62,9 +61,7 @@ async def scrape_next_test():
             async with session.get(url, timeout=15) as response:
                 if response.status != 200:
                     return {"status": "error", "data": f"HTTP {response.status}"}
-
                 text = await response.text()
-
     except Exception as e:
         return {"status": "error", "data": f"Request failed: {e}"}
 
@@ -106,11 +103,14 @@ def build_embed(scraped):
         embed.description = f"⚠️ {scraped['data']}"
         embed.color = discord.Color.red()
 
+    # Proper footer formatting (no Discord timestamp markdown)
     if last_scraped_time:
-        unix = int(last_scraped_time.timestamp())
-        embed.set_footer(text=f"Last updated: <t:{unix}:R>")
+        formatted = last_scraped_time.strftime("%Y-%m-%d %H:%M UTC")
+        embed.set_footer(text=f"Last updated: {formatted}")
 
+    # This automatically shows "Today at ..." on the right side
     embed.timestamp = datetime.now(timezone.utc)
+
     return embed
 
 
@@ -145,7 +145,6 @@ async def background_scraper():
 
         print("Scrape finished.")
 
-        # Random sleep between 30–60 minutes
         sleep_time = random.randint(1800, 3600)
         print(f"Next scrape in {sleep_time // 60} minutes")
         await asyncio.sleep(sleep_time)
