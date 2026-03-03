@@ -19,10 +19,10 @@ tree = app_commands.CommandTree(client)
 
 CHANNELS_FILE = "channels.json"
 
-# ---------------- GLOBAL CACHE ----------------
+# ---------------- GLOBAL STATE ----------------
 cached_result = {"status": "error", "data": "Not scraped yet"}
 last_scraped_time = None
-last_announced_date = None
+last_saved_date = None
 announcement_channels = {}
 
 
@@ -79,18 +79,12 @@ async def scrape_next_test():
     return {"status": "ok", "data": next_time}
 
 
-# ---------------- EMBED ----------------
+# ---------------- NORMAL EMBED (USER COMMANDS) ----------------
 def build_embed(scraped):
-    embed = discord.Embed(title="Next Anvil Empires Test")
+    embed = discord.Embed(title="Anvil Empires Test")
 
     if scraped["status"] == "ok":
-        try:
-            dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
-        except ValueError:
-            embed.description = f"⚠️ Unknown date format:\n{scraped['data']}"
-            embed.color = discord.Color.red()
-            return embed
-
+        dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
         unix = int(dt.timestamp())
 
         embed.description = (
@@ -103,12 +97,34 @@ def build_embed(scraped):
         embed.description = f"⚠️ {scraped['data']}"
         embed.color = discord.Color.red()
 
-    # Proper footer formatting (no Discord timestamp markdown)
     if last_scraped_time:
         formatted = last_scraped_time.strftime("%Y-%m-%d %H:%M UTC")
         embed.set_footer(text=f"Last updated: {formatted}")
 
-    # This automatically shows "Today at ..." on the right side
+    embed.timestamp = datetime.now(timezone.utc)
+
+    return embed
+
+
+# ---------------- ANNOUNCEMENT EMBED ----------------
+def build_announcement_embed(scraped):
+    embed = discord.Embed(title="❗Anvil Empires Test❗")
+
+    dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
+    unix = int(dt.timestamp())
+
+    embed.description = (
+        f"❗ **New Test Date:**\n"
+        f"<t:{unix}:F>\n"
+        f"❗ <t:{unix}:R>"
+    )
+
+    embed.color = discord.Color.gold()
+
+    if last_scraped_time:
+        formatted = last_scraped_time.strftime("%Y-%m-%d %H:%M UTC")
+        embed.set_footer(text=f"Last updated: {formatted}")
+
     embed.timestamp = datetime.now(timezone.utc)
 
     return embed
@@ -116,7 +132,7 @@ def build_embed(scraped):
 
 # ---------------- AUTO SCRAPER LOOP ----------------
 async def background_scraper():
-    global cached_result, last_scraped_time, last_announced_date
+    global cached_result, last_scraped_time, last_saved_date
 
     await client.wait_until_ready()
 
@@ -128,20 +144,18 @@ async def background_scraper():
         cached_result = result
         last_scraped_time = datetime.now(timezone.utc)
 
-        # Auto announce if date changed
         if result["status"] == "ok":
-            if result["data"] != last_announced_date:
-                last_announced_date = result["data"]
 
-                embed = build_embed(result)
+            if result["data"] != last_saved_date:
+                print("New date detected. Sending announcement...")
+                last_saved_date = result["data"]
 
-                for channel_id in announcement_channels.values():
+                embed = build_announcement_embed(result)
+
+                for guild_id, channel_id in announcement_channels.items():
                     channel = client.get_channel(int(channel_id))
                     if channel:
-                        await channel.send(
-                            content="📢 **Test Date Updated!**",
-                            embed=embed
-                        )
+                        await channel.send(embed=embed)
 
         print("Scrape finished.")
 
@@ -176,10 +190,10 @@ async def nexttest(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-# ---------------- ANNOUNCEMENT COMMANDS ----------------
-@tree.command(name="setannouncement", description="Set announcement channel")
-@app_commands.describe(channel="Channel to post updates in")
-async def setannouncement(interaction: discord.Interaction, channel: discord.TextChannel):
+# ---------------- SET ANNOUNCEMENT CHANNEL ----------------
+@tree.command(name="setannouncementchannel", description="Set the channel for automatic test announcements")
+@app_commands.describe(channel="Channel where announcements will be posted")
+async def setannouncementchannel(interaction: discord.Interaction, channel: discord.TextChannel):
 
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
@@ -195,32 +209,6 @@ async def setannouncement(interaction: discord.Interaction, channel: discord.Tex
         f"✅ Announcement channel set to {channel.mention}",
         ephemeral=True
     )
-
-
-@tree.command(name="removeannouncement", description="Remove announcement channel")
-async def removeannouncement(interaction: discord.Interaction):
-
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permission required.",
-            ephemeral=True
-        )
-        return
-
-    guild_id = str(interaction.guild.id)
-
-    if guild_id in announcement_channels:
-        del announcement_channels[guild_id]
-        save_json(CHANNELS_FILE, announcement_channels)
-        await interaction.response.send_message(
-            "✅ Announcement channel removed.",
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            "⚠️ No announcement channel set.",
-            ephemeral=True
-        )
 
 
 # ---------------- READY ----------------
