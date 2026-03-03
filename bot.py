@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import tasks
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 import time
@@ -27,6 +27,8 @@ cached_result = None
 cached_timestamp = 0
 last_announced_time = None
 
+scraper = cloudscraper.create_scraper()
+
 
 # ---------------- FILE HELPERS ----------------
 def load_json(filename, default):
@@ -48,10 +50,9 @@ cooldowns = load_json(COOLDOWN_FILE, {})
 # ---------------- SCRAPER ----------------
 def scrape_next_test():
     url = "https://anvilempires.wiki.gg/"
-    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = scraper.get(url, timeout=15)
         response.raise_for_status()
     except Exception as e:
         return {"status": "error", "data": f"Request failed: {e}"}
