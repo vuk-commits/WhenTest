@@ -115,7 +115,7 @@ def build_embed(scraped):
     if is_test_live(scraped):
         return build_live_embed()
     
-    embed = discord.Embed(title="When is the next Anvil Empires Test?")
+    embed = discord.Embed(title="When is the next test?")
 
     if scraped["status"] == "ok":
         dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
