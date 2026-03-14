@@ -97,8 +97,8 @@ def is_test_live(scraped):
 
 # ---------------- LIVE EMBED ----------------
 def build_live_embed():
-    embed = discord.Embed(title="🔥 THE TEST IS LIVE! 🔥")
-    embed.description = "❗ **The test is currently active!** ❗"
+    embed = discord.Embed(title=" No new test date!")
+    embed.description = "❔ **There is no new test date, waiting for devs to update it!** ❔"
     embed.color = discord.Color.red()
     
     if last_scraped_time:
