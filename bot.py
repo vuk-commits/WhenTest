@@ -98,13 +98,7 @@ def is_test_live(scraped):
 # ---------------- LIVE EMBED ----------------
 def build_live_embed():
     embed = discord.Embed(title=" No new test date!")
-    dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
-        unix = int(dt.timestamp())
-
-        embed.description = (
-            f"❔️ **Last confirmed date:**\n"
-            f"<t:{unix}:F>\n"
-        )
+    embed.description = "❔ **There is no new test date, waiting for devs to update it!** ❔"
     embed.color = discord.Color.white()
     
     if last_scraped_time:
@@ -257,7 +251,7 @@ async def setannouncementchannel(interaction: discord.Interaction, channel: disc
 
     announcement_channels[str(interaction.guild.id)] = channel.id
     save_json(CHANNELS_FILE, announcement_channels)
-            
+
     await interaction.response.send_message(
         f"✅ Announcement channel set to {channel.mention}",
         ephemeral=True
