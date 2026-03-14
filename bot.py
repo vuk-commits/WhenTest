@@ -45,13 +45,13 @@ announcement_channels = load_json(CHANNELS_FILE, {})
 
 # ---------------- SCRAPER ----------------
 async def scrape_next_test():
-    url = "[anvilempires.wiki.gg](https://anvilempires.wiki.gg/)"
+    url = "https://anvilempires.wiki.gg/"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
-        "Referer": "[google.com](https://www.google.com/)",
+        "Referer": "https://www.google.com/",
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1"
@@ -80,13 +80,14 @@ async def scrape_next_test():
     return {"status": "ok", "data": next_time}
 
 
-# ---------------- CHECK IF TEST DATE HAS PASSED ----------------
-def is_test_past(scraped):
+# ---------------- CHECK IF TEST IS LIVE ----------------
+def is_test_live(scraped):
     if scraped["status"] != "ok":
         return False
     
     dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
     
+    # Ensure dt is timezone-aware
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     
@@ -94,19 +95,11 @@ def is_test_past(scraped):
     return now >= dt
 
 
-# ---------------- PAST TEST EMBED ----------------
-def build_past_embed(scraped):
-    embed = discord.Embed(title="📅 Last Confirmed Test Date")
-    
-    dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
-    unix = int(dt.timestamp())
-    
-    embed.description = (
-        f"🛡️ **Last Test Date:**\n"
-        f"<t:{unix}:F>\n\n"
-        f"⏳ No upcoming test date announced yet."
-    )
-    embed.color = discord.Color.orange()
+# ---------------- LIVE EMBED ----------------
+def build_live_embed():
+    embed = discord.Embed(title="🔥 THE TEST IS LIVE! 🔥")
+    embed.description = "❗ **The test is currently active!** ❗"
+    embed.color = discord.Color.red()
     
     if last_scraped_time:
         formatted = last_scraped_time.strftime("%Y-%m-%d %H:%M UTC")
@@ -118,11 +111,11 @@ def build_past_embed(scraped):
 
 # ---------------- NORMAL EMBED (USER COMMANDS) ----------------
 def build_embed(scraped):
-    # Check if test date has passed
-    if is_test_past(scraped):
-        return build_past_embed(scraped)
+    # Check if test is live first
+    if is_test_live(scraped):
+        return build_live_embed()
     
-    embed = discord.Embed(title="When is the next test?")
+    embed = discord.Embed(title="When is the next Anvil Empires Test?")
 
     if scraped["status"] == "ok":
         dt = datetime.fromisoformat(scraped["data"].replace("Z", "+00:00"))
@@ -186,13 +179,19 @@ async def background_scraper():
         last_scraped_time = datetime.now(timezone.utc)
 
         if result["status"] == "ok":
-            # Check if test date has passed
-            if is_test_past(result):
+            # Check if test is now live
+            if is_test_live(result):
                 if not last_announced_live:
-                    print("Test date has passed. Waiting for new date...")
+                    print("Test is LIVE! Sending live announcement...")
                     last_announced_live = True
+                    embed = build_live_embed()
+
+                    for guild_id, channel_id in announcement_channels.items():
+                        channel = client.get_channel(int(channel_id))
+                        if channel:
+                            await channel.send(content="📢 **THE TEST IS LIVE!**", embed=embed)
             else:
-                # Test is upcoming, check for new date
+                # Test is not yet live, check for new date
                 if result["data"] != last_saved_date:
                     print("New date detected. Sending announcement...")
                     last_saved_date = result["data"]
