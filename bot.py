@@ -99,7 +99,7 @@ def is_test_live(scraped):
 def build_live_embed():
     embed = discord.Embed(title="Last confirmed test date:")
     embed.description = (
-            f"❕ **Last confirmed date:**\n"
+            f"❕️ **Last confirmed test date:**\n"
             f"<t:{unix}:F>\n"
         )
     embed.color = discord.Color.red()
