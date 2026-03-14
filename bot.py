@@ -99,7 +99,7 @@ def is_test_live(scraped):
 def build_live_embed():
     embed = discord.Embed(title=" No new test date!")
     embed.description = "❔ **There is no new test date, waiting for devs to update it!** ❔"
-    embed.color = discord.Color.white()
+    embed.color = discord.Color.green()
     
     if last_scraped_time:
         formatted = last_scraped_time.strftime("%Y-%m-%d %H:%M UTC")
